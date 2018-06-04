@@ -61,16 +61,22 @@ export class ClaimController {
     const logger = this.logger.child({ method: 'download' })
 
     logger.trace({ ipfsHashes }, 'Downloading Claims')
-    await this.collection.insertMany(
-      ipfsHashes.map(ipfsHash => ({
-        ipfsHash,
-        claimId: null,
-        lastDownloadAttemptTime: null,
-        downloadSuccessTime: null,
-        downloadAttempts: 0,
-      })),
-      { ordered: false }
-    )
+
+    try {
+      await this.collection.insertMany(
+        ipfsHashes.map(ipfsHash => ({
+          ipfsHash,
+          claimId: null,
+          lastDownloadAttemptTime: null,
+          downloadSuccessTime: null,
+          downloadAttempts: 0,
+        })),
+        { ordered: false }
+      )
+    } catch (exception) {
+      if (exception.code !== 11000) throw exception
+      logger.trace({ exception }, 'Duplicate IPFS hash')
+    }
   }
 
   async downloadNextHash({
@@ -79,22 +85,26 @@ export class ClaimController {
   }: {
     retryDelay?: number
     maxAttempts?: number
-  } = {}) {
-    this.logger.child({ method: 'downloadNextHash' })
+  } = {}): Promise<void> {
+    const logger = this.logger.child({ method: 'downloadNextHash' })
     try {
       this.logger.trace('Downloading next entry')
-      const result = await asyncPipe(
+      await asyncPipe(
         this.findEntryToDownload,
         this.updateEntryAttempts,
         this.downloadEntryClaim,
         this.updateEntryPairs,
         this.publishEntryDownload
       )({ retryDelay, maxAttempts })
-      this.logger.info('Successfully downloaded entry')
-      return result
+      logger.info('Successfully downloaded entry')
     } catch (error) {
-      if (error instanceof NoMoreEntriesException) return this.logger.trace(error.message)
-      this.logger.error(error)
+      if (error instanceof NoMoreEntriesException) {
+        logger.trace(error.message)
+      } else if (error instanceof NoMoreEntriesException) {
+        
+      } else {
+        logger.error(error)
+      }
     }
   }
 
@@ -230,10 +240,20 @@ export class ClaimController {
   }
 
   private downloadClaim = async (ipfsHash: string): Promise<Claim> => {
+    const logger = this.logger.child({ method: 'downloadClaim' })
     const text = await this.ipfs.cat(ipfsHash)
-    const claim = JSON.parse(text)
+    let claim
 
-    if (!isClaim(claim)) throw new Error('Unrecognized claim')
+    try {
+      claim = JSON.parse(text)
+    } catch (error) {
+      logger.error({ ipfsHash, text, error }, 'Error parsing claim')
+    }
+
+    if (!isClaim(claim)) {
+      logger.error({ text }, 'Unrecognized claim')
+      throw new Error('Unrecognized claim')
+    }
 
     return claim
   }
