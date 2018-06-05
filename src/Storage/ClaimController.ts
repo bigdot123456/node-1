@@ -4,7 +4,7 @@ import { Collection, Db } from 'mongodb'
 import * as Pino from 'pino'
 
 import { asyncPipe } from 'Helpers/AsyncPipe'
-import { NoMoreEntriesException } from 'Helpers/Exceptions'
+import { NoMoreEntriesException, InvalidClaim } from 'Helpers/Exceptions'
 import { childWithFileName } from 'Helpers/Logging'
 import { minutesToMiliseconds } from 'Helpers/Time'
 import { Exchange } from 'Messaging/Messages'
@@ -87,8 +87,13 @@ export class ClaimController {
     maxAttempts?: number
   } = {}): Promise<void> {
     const logger = this.logger.child({ method: 'downloadNextHash' })
+
+    const updateEntryFailureDetail = () => {
+
+    }
+
     try {
-      this.logger.trace('Downloading next entry')
+      logger.trace('Downloading next entry')
       await asyncPipe(
         this.findEntryToDownload,
         this.updateEntryAttempts,
@@ -100,8 +105,8 @@ export class ClaimController {
     } catch (error) {
       if (error instanceof NoMoreEntriesException) {
         logger.trace(error.message)
-      } else if (error instanceof NoMoreEntriesException) {
-        
+      } else if (error instanceof InvalidClaim) {
+        updateEntryFailureDetail()
       } else {
         logger.error(error)
       }
@@ -247,12 +252,13 @@ export class ClaimController {
     try {
       claim = JSON.parse(text)
     } catch (error) {
-      logger.error({ ipfsHash, text, error }, 'Error parsing claim')
+      throw new InvalidClaim('Error parsing claim', ipfsHash)
+      // logger.error({ ipfsHash, text, error }, 'Error parsing claim')
     }
 
     if (!isClaim(claim)) {
       logger.error({ text }, 'Unrecognized claim')
-      throw new Error('Unrecognized claim')
+      throw new InvalidClaim('Unrecognized claim', ipfsHash)
     }
 
     return claim
