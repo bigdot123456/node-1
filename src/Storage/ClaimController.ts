@@ -88,9 +88,16 @@ export class ClaimController {
   } = {}): Promise<void> {
     const logger = this.logger.child({ method: 'downloadNextHash' })
 
-    const updateEntryFailureDetail = () => {
-
-    }
+    const updateEntryFailureReason = (ipfsHash: string, failureType: string, failureReason: string) =>
+      this.collection.updateOne(
+        { ipfsHash },
+        {
+          $set: {
+            failureType: 'HARD',
+            failureReason,
+          },
+        }
+      )
 
     try {
       logger.trace('Downloading next entry')
@@ -106,9 +113,10 @@ export class ClaimController {
       if (error instanceof NoMoreEntriesException) {
         logger.trace(error.message)
       } else if (error instanceof InvalidClaim) {
-        updateEntryFailureDetail()
+        await updateEntryFailureReason(error.ipfsHash, 'hard', 'invalid')
       } else {
         logger.error(error)
+        await updateEntryFailureReason(error.ipfsHash, 'soft', 'unknown')
       }
     }
   }
@@ -144,6 +152,13 @@ export class ClaimController {
             { downloadAttempts: null },
             { downloadAttempts: { $exists: false } },
             { downloadAttempts: { $lte: maxAttempts } },
+          ],
+        },
+        {
+          $or: [
+            { failureType: null },
+            { failureType: { $exists: false } },
+            { failureType: { $ne: 'HARD' } },
           ],
         },
       ],
