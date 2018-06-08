@@ -116,18 +116,12 @@ export class ClaimController {
       } else if (error instanceof IPFSError) {
         logger.warn(error)
         await updateEntryFailureReason(error.ipfsHash, FailureType.Soft, FailureReason.IPFS)
-      } else {
-        logger.error(error)
       }
     }
 
-    try {
-      logger.trace('Downloading next entry')
-      await pipe({ retryDelay, maxAttempts })
-      logger.info('Successfully downloaded entry')
-    } catch (error) {
-      await handleErrors(error)
-    }
+    logger.trace('Downloading next entry')
+    await pipe({ retryDelay, maxAttempts }).catch(handleErrors)
+    logger.info('Successfully downloaded entry')
   }
 
   private findEntryToDownload = async ({
