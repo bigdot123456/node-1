@@ -18,3 +18,12 @@ export class InvalidClaim extends Error {
     this.failureReason = failureReason
   }
 }
+
+export class IPFSError extends Error {
+  readonly ipfsHash: string
+
+  constructor(ipfsHash: string) {
+    super()
+    this.ipfsHash = ipfsHash
+  }
+}

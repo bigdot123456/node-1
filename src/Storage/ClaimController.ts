@@ -12,7 +12,7 @@ import { Messaging } from 'Messaging/Messaging'
 import { ClaimControllerConfiguration } from './ClaimControllerConfiguration'
 import { FailureReason, FailureType } from './DownloadFailure'
 import { Entry } from './Entry'
-import { NoMoreEntriesException, InvalidClaim } from './Exceptions'
+import { NoMoreEntriesException, InvalidClaim, IPFSError } from './Exceptions'
 import { IPFS } from './IPFS'
 
 @injectable()
@@ -100,25 +100,33 @@ export class ClaimController {
         }
       )
 
-    try {
-      logger.trace('Downloading next entry')
-      await asyncPipe(
-        this.findEntryToDownload,
-        this.updateEntryAttempts,
-        this.downloadEntryClaim,
-        this.updateEntryPairs,
-        this.publishEntryDownload
-      )({ retryDelay, maxAttempts })
-      logger.info('Successfully downloaded entry')
-    } catch (error) {
+    const pipe = asyncPipe(
+      this.findEntryToDownload,
+      this.updateEntryAttempts,
+      this.downloadEntryClaim,
+      this.updateEntryPairs,
+      this.publishEntryDownload
+    )
+
+    const handleErrors = async (error: Error) => {
       if (error instanceof NoMoreEntriesException) {
         logger.trace(error.message)
       } else if (error instanceof InvalidClaim) {
         await updateEntryFailureReason(error.ipfsHash, FailureType.Hard, error.failureReason)
+      } else if (error instanceof IPFSError) {
+        logger.warn(error)
+        await updateEntryFailureReason(error.ipfsHash, FailureType.Soft, FailureReason.IPFS)
       } else {
         logger.error(error)
-        await updateEntryFailureReason(error.ipfsHash, FailureType.Soft, FailureReason.Other)
       }
+    }
+
+    try {
+      logger.trace('Downloading next entry')
+      await pipe({ retryDelay, maxAttempts })
+      logger.info('Successfully downloaded entry')
+    } catch (error) {
+      await handleErrors(error)
     }
   }
 
@@ -210,6 +218,13 @@ export class ClaimController {
 
   private downloadEntryClaim = async ({ entry, ...rest }: { entry: Entry }) => {
     const { ipfsHash } = entry
+    const downloadClaim = async () => {
+      try {
+        return await this.ipfs.cat(ipfsHash)
+      } catch (error) {
+        throw new IPFSError(ipfsHash)
+      }
+    }
     const parseClaim = (serialized: string) => {
       try {
         return JSON.parse(serialized)
@@ -221,7 +236,7 @@ export class ClaimController {
 
     logger.trace({ ipfsHash }, 'Starting claim download')
 
-    const serialized = await this.ipfs.cat(ipfsHash)
+    const serialized = await downloadClaim()
     const claim = parseClaim(serialized)
 
     if (!isClaim(claim)) throw new InvalidClaim(ipfsHash, FailureReason.InvalidClaim)
