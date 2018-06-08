@@ -167,7 +167,7 @@ export class ClaimController {
 
     if (!entry) throw new NoMoreEntriesException('No valid entries found')
 
-    logger.trace('finished finding entry', entry)
+    logger.trace({ entry }, 'finished finding entry')
 
     return {
       currentTime,
@@ -209,10 +209,25 @@ export class ClaimController {
   }
 
   private downloadEntryClaim = async ({ entry, ...rest }: { entry: Entry }) => {
+    const { ipfsHash } = entry
+    const parseClaim = (serialized: string) => {
+      try {
+        return JSON.parse(serialized)
+      } catch (error) {
+        throw new InvalidClaim(ipfsHash, FailureReason.InvalidJson)
+      }
+    }
     const logger = this.logger.child({ method: 'downloadEntryClaim' })
-    logger.trace('starting claim download')
-    const claim = await this.downloadClaim(entry.ipfsHash)
-    logger.trace('finished claim download', claim)
+
+    logger.trace({ ipfsHash }, 'Starting claim download')
+
+    const serialized = await this.ipfs.cat(ipfsHash)
+    const claim = parseClaim(serialized)
+
+    if (!isClaim(claim)) throw new InvalidClaim(ipfsHash, FailureReason.InvalidClaim)
+
+    logger.trace({ ipfsHash, claim }, 'Finished claim download')
+
     return {
       entry,
       claim,
@@ -258,23 +273,6 @@ export class ClaimController {
       entry,
       ...rest,
     }
-  }
-
-  private downloadClaim = async (ipfsHash: string): Promise<Claim> => {
-    const parseClaim = (serialized: string) => {
-      try {
-        return JSON.parse(serialized)
-      } catch (error) {
-        throw new InvalidClaim(ipfsHash, FailureReason.InvalidJson)
-      }
-    }
-
-    const serialized = await this.ipfs.cat(ipfsHash)
-    const claim = parseClaim(serialized)
-
-    if (!isClaim(claim)) throw new InvalidClaim(ipfsHash, FailureReason.InvalidClaim)
-
-    return claim
   }
 
   private async updateClaimIdIPFSHashPairs(claimIdIPFSHashPairs: ReadonlyArray<ClaimIdIPFSHashPair>) {
