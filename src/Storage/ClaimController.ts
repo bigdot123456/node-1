@@ -4,14 +4,15 @@ import { Collection, Db } from 'mongodb'
 import * as Pino from 'pino'
 
 import { asyncPipe } from 'Helpers/AsyncPipe'
-import { NoMoreEntriesException, InvalidClaim } from 'Helpers/Exceptions'
 import { childWithFileName } from 'Helpers/Logging'
 import { minutesToMiliseconds } from 'Helpers/Time'
 import { Exchange } from 'Messaging/Messages'
 import { Messaging } from 'Messaging/Messaging'
 
 import { ClaimControllerConfiguration } from './ClaimControllerConfiguration'
+import { FailureReason, FailureType } from './DownloadFailure'
 import { Entry } from './Entry'
+import { NoMoreEntriesException, InvalidClaim } from './Exceptions'
 import { IPFS } from './IPFS'
 
 @injectable()
@@ -88,12 +89,12 @@ export class ClaimController {
   } = {}): Promise<void> {
     const logger = this.logger.child({ method: 'downloadNextHash' })
 
-    const updateEntryFailureReason = (ipfsHash: string, failureType: string, failureReason: string) =>
+    const updateEntryFailureReason = (ipfsHash: string, failureType: FailureType, failureReason: FailureReason) =>
       this.collection.updateOne(
         { ipfsHash },
         {
           $set: {
-            failureType: 'HARD',
+            failureType,
             failureReason,
           },
         }
@@ -113,10 +114,10 @@ export class ClaimController {
       if (error instanceof NoMoreEntriesException) {
         logger.trace(error.message)
       } else if (error instanceof InvalidClaim) {
-        await updateEntryFailureReason(error.ipfsHash, 'hard', 'invalid')
+        await updateEntryFailureReason(error.ipfsHash, FailureType.Hard, error.failureReason)
       } else {
         logger.error(error)
-        await updateEntryFailureReason(error.ipfsHash, 'soft', 'unknown')
+        await updateEntryFailureReason(error.ipfsHash, FailureType.Soft, FailureReason.Other)
       }
     }
   }
@@ -158,7 +159,7 @@ export class ClaimController {
           $or: [
             { failureType: null },
             { failureType: { $exists: false } },
-            { failureType: { $ne: 'HARD' } },
+            { failureType: { $ne: FailureType.Hard } },
           ],
         },
       ],
@@ -260,21 +261,18 @@ export class ClaimController {
   }
 
   private downloadClaim = async (ipfsHash: string): Promise<Claim> => {
-    const logger = this.logger.child({ method: 'downloadClaim' })
-    const text = await this.ipfs.cat(ipfsHash)
-    let claim
-
-    try {
-      claim = JSON.parse(text)
-    } catch (error) {
-      throw new InvalidClaim('Error parsing claim', ipfsHash)
-      // logger.error({ ipfsHash, text, error }, 'Error parsing claim')
+    const parseClaim = (serialized: string) => {
+      try {
+        return JSON.parse(serialized)
+      } catch (error) {
+        throw new InvalidClaim(ipfsHash, FailureReason.InvalidJson)
+      }
     }
 
-    if (!isClaim(claim)) {
-      logger.error({ text }, 'Unrecognized claim')
-      throw new InvalidClaim('Unrecognized claim', ipfsHash)
-    }
+    const serialized = await this.ipfs.cat(ipfsHash)
+    const claim = parseClaim(serialized)
+
+    if (!isClaim(claim)) throw new InvalidClaim(ipfsHash, FailureReason.InvalidClaim)
 
     return claim
   }
