@@ -218,7 +218,7 @@ export class ClaimController {
       try {
         return await this.ipfs.cat(ipfsHash)
       } catch (error) {
-        if (error.name === 'FetchError' && error.type === 'request-timeout') {
+        if (error.name === 'FetchError' && ['request-timeout', 'body-timeout'].includes(error.type)) {
           throw new IPFSTimeoutError(ipfsHash)
         } else {
           throw new IPFSGenericError(ipfsHash, error)
