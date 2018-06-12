@@ -48,3 +48,9 @@ image:
 
 push-image:
 	docker push $(IMAGE)
+
+ipfs-unpin-all:
+	docker exec poet-ipfs sh -c "ipfs pin ls --type recursive -q | xargs -n1 ipfs pin rm"
+
+ipfs-gc:
+	docker exec poet-ipfs ipfs repo gc
