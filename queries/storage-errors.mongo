@@ -1,0 +1,1 @@
+db.storage.aggregate([{ $group: {_id: "$failureReason", count: { $sum: 1 } } }])

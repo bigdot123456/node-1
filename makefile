@@ -11,7 +11,7 @@ ipfs:
 	docker run -d --name poet-ipfs -p 8080:8080 -p 4001:4001 -p 127.0.0.1:5001:5001 jbenet/go-ipfs:latest
 
 sh-mongo:
-	docker run -it --link poet-mongo:mongo --rm mongo sh -c 'exec mongo "$$MONGO_PORT_27017_TCP_ADDR:$$MONGO_PORT_27017_TCP_PORT/test"'
+	docker run -it --link poet-mongo:mongo --rm mongo sh -c 'exec mongo "$$MONGO_PORT_27017_TCP_ADDR:$$MONGO_PORT_27017_TCP_PORT/poet"'
 
 sh-ipfs:
 	docker exec -it poet-ipfs /bin/sh
@@ -56,4 +56,7 @@ ipfs-gc:
 	docker exec poet-ipfs ipfs repo gc
 
 reset-storage:
-	sudo docker exec poet-mongo mongo poet --eval 'db.storage.update({}, {$$set: {claimId: null, failureReason: null, failureType: null, downloadAttempts: 0, lastDownloadAttemptTime: 0}}, {multi:1})'
+	docker exec -i poet-mongo mongo poet < ./queries/reset-storage.mongo
+
+print-storage-errors:
+	docker exec -i poet-mongo mongo poet < ./queries/storage-errors.mongo
