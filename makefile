@@ -54,3 +54,6 @@ ipfs-unpin-all:
 
 ipfs-gc:
 	docker exec poet-ipfs ipfs repo gc
+
+reset-storage:
+	sudo docker exec poet-mongo mongo poet --eval 'db.storage.update({}, {$$set: {claimId: null, failureReason: null, failureType: null, downloadAttempts: 0, lastDownloadAttemptTime: 0}}, {multi:1})'
