@@ -19,7 +19,18 @@ export class InvalidClaim extends Error {
   }
 }
 
-export class IPFSError extends Error {
+export class IPFSGenericError extends Error {
+  readonly ipfsHash: string
+  readonly underlyingError: Error
+
+  constructor(ipfsHash: string, underlyingError: Error) {
+    super()
+    this.ipfsHash = ipfsHash
+    this.underlyingError = underlyingError
+  }
+}
+
+export class IPFSTimeoutError extends Error {
   readonly ipfsHash: string
 
   constructor(ipfsHash: string) {

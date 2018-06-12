@@ -12,7 +12,7 @@ import { Messaging } from 'Messaging/Messaging'
 import { ClaimControllerConfiguration } from './ClaimControllerConfiguration'
 import { FailureReason, FailureType } from './DownloadFailure'
 import { Entry } from './Entry'
-import { NoMoreEntriesException, InvalidClaim, IPFSError } from './Exceptions'
+import { NoMoreEntriesException, InvalidClaim, IPFSGenericError, IPFSTimeoutError } from './Exceptions'
 import { IPFS } from './IPFS'
 
 @injectable()
@@ -113,9 +113,11 @@ export class ClaimController {
         logger.trace(error.message)
       } else if (error instanceof InvalidClaim) {
         await updateEntryFailureReason(error.ipfsHash, FailureType.Hard, error.failureReason)
-      } else if (error instanceof IPFSError) {
-        logger.warn(error)
-        await updateEntryFailureReason(error.ipfsHash, FailureType.Soft, FailureReason.IPFS)
+      } else if (error instanceof IPFSTimeoutError) {
+        await updateEntryFailureReason(error.ipfsHash, FailureType.Soft, FailureReason.IPFSTimeout)
+      } else if (error instanceof IPFSGenericError) {
+        logger.warn({ error })
+        await updateEntryFailureReason(error.ipfsHash, FailureType.Soft, FailureReason.IPFSGeneric)
       }
     }
 
@@ -216,7 +218,11 @@ export class ClaimController {
       try {
         return await this.ipfs.cat(ipfsHash)
       } catch (error) {
-        throw new IPFSError(ipfsHash)
+        if (error.name === 'FetchError' && error.type === 'request-timeout') {
+          throw new IPFSTimeoutError(ipfsHash)
+        } else {
+          throw new IPFSGenericError(ipfsHash, error)
+        }
       }
     }
     const parseClaim = (serialized: string) => {
